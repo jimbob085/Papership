@@ -1,0 +1,40 @@
+{
+  "name": "@permaship/nexus-governance-plugin",
+  "version": "0.1.0",
+  "description": "AI governance layer for Paperclip. Routes agent work through Nexus specialist review (Security, QA, SRE, Product, Design) before execution.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "lint": "tsc --noEmit"
+  },
+  "keywords": [
+    "paperclip",
+    "paperclip-plugin",
+    "nexus",
+    "permaship",
+    "ai-governance",
+    "multi-agent",
+    "code-review",
+    "agent-orchestration"
+  ],
+  "author": "PermaShip AI <hello@permaship.ai>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PermaShipAI/nexus-paperclip-plugin"
+  },
+  "homepage": "https://permaship.ai",
+  "dependencies": {
+    "@paperclipai/plugin-sdk": "latest"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
