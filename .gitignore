@@ -1,5 +1,5 @@
 node_modules/
 dist/
-*.tsbuildinfo
+bridge-data.json
 .env
-.env.local
+*.log

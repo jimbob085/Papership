@@ -1,0 +1,22 @@
+{
+  "$schema": "https://docs.paperclip.dev/schemas/agent-adapter.json",
+  "id": "permaship-bridge",
+  "name": "PermaShip Bridge",
+  "description": "Delegates engineering work to PermaShip via the external bridge service",
+  "type": "http",
+  "config": {
+    "url": "http://localhost:3100/invoke",
+    "method": "POST",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ${BRIDGE_API_KEY}"
+    },
+    "timeout": 10000,
+    "async": true
+  },
+  "notes": [
+    "This adapter uses the async 202 Accepted pattern.",
+    "The bridge calls back to /api/heartbeat-runs/:runId/callback when work completes.",
+    "Do not increase timeout to wait for completion; the bridge handles the full lifecycle."
+  ]
+}

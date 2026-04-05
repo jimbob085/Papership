@@ -1,124 +1,218 @@
-# Nexus Governance Plugin for Paperclip
+# paperclip-permaship-bridge
 
-**Who reviews what your agents ship?**
+An external bridge service that connects **Paperclip** HTTP adapter invocations to **PermaShip** governed engineering execution.
 
-Paperclip orchestrates AI agent teams. Nexus makes sure their work is actually safe to deploy.
+This is not a native Paperclip plugin. It is a standalone integration built around Paperclip's async HTTP adapter pattern, translating orchestration decisions into concrete engineering tickets and reporting results back when work completes.
 
-This plugin adds a governance layer to Paperclip by routing agent work through specialist reviewers (Security, QA, SRE, Product) before execution. Nothing ships without a verdict.
+## Why This Exists
 
-## What It Does
+Paperclip handles company-level orchestration: deciding what engineering work should happen. PermaShip handles governed engineering execution: turning work into concrete tasks, executing through a coding backend, and reviewing before shipping.
 
-When a Paperclip issue is created or assigned to an agent, this plugin intercepts it and runs a multi-perspective governance review:
+This bridge connects those layers:
 
-| Specialist | What They Check |
-|-----------|----------------|
-| **CISO** | Security vulnerabilities, auth concerns, data exposure |
-| **QA Manager** | Task clarity, edge cases, acceptance criteria |
-| **SRE** | Uptime risk, performance impact, deployment safety |
-| **Product** | Goal alignment, scope creep, missing context |
-| **Release Eng** | CI/CD impact, rollback readiness |
-| **FinOps** | Cost implications, resource usage |
+1. **Paperclip** decides engineering work should happen
+2. **The bridge** translates that into a PermaShip ticket
+3. **PermaShip** performs governed execution
+4. **The bridge** reports completion status back to Paperclip
 
-Each specialist returns a verdict: **APPROVE**, **FLAG** (proceed with caution), or **BLOCK** (needs revision). The consolidated result is posted as an issue comment with actionable feedback.
-
-## Two Operating Modes
-
-### Connected Mode (Full Power)
-Run alongside a [Nexus](https://github.com/PermaShipAI/nexus) instance for the complete multi-agent governance experience. Nexus's specialist agents deliberate independently, argue with each other, and produce nuanced verdicts.
+## Architecture
 
 ```
-Paperclip Issue --> Plugin --> Nexus API --> 8 Specialist Agents --> Verdict --> Issue Comment
+Paperclip                    Bridge                      PermaShip
+   |                           |                            |
+   |  POST /invoke             |                            |
+   |-------------------------->|                            |
+   |  202 Accepted             |                            |
+   |<--------------------------|                            |
+   |                           |  POST /orgs/.../tickets    |
+   |                           |--------------------------->|
+   |                           |  201 Created (ticketId)    |
+   |                           |<---------------------------|
+   |                           |                            |
+   |                           |     ... work happens ...   |
+   |                           |                            |
+   |                           |  POST /webhooks/permaship  |
+   |                           |<---------------------------|
+   |  POST /api/heartbeat-     |                            |
+   |    runs/:runId/callback   |                            |
+   |<--------------------------|                            |
 ```
 
-### Standalone Mode (Zero Setup)
-No Nexus instance required. The plugin generates a governance review prompt and runs it through any agent available in your Paperclip company. Simpler than Connected mode, but still catches the big issues.
+## End-to-End Sequence
 
-```
-Paperclip Issue --> Plugin --> Review Prompt --> Any Paperclip Agent --> Verdict --> Issue Comment
-```
+1. Paperclip sends an HTTP adapter request to `POST /invoke` with a `runId` and task context.
+2. The bridge returns `202 Accepted` immediately.
+3. The bridge maps the Paperclip payload to a PermaShip ticket and creates it via the PermaShip API.
+4. The bridge stores a `paperclipRunId <-> permashipTicketId` mapping in a local SQLite database.
+5. PermaShip executes the engineering work.
+6. PermaShip sends a webhook (`ready_for_review` or `ticket.failed`) to `POST /webhooks/permaship`.
+7. The bridge looks up the mapping and calls Paperclip's callback endpoint with `succeeded` or `failed`.
 
-## Quick Start
+## Setup
+
+### Prerequisites
+
+- Node.js 18+
+- npm
 
 ### Install
 
 ```bash
-# From your Paperclip installation
-paperclip plugin install @permaship/nexus-governance-plugin
+npm install
 ```
 
-### Configure (Optional, for Connected Mode)
+### Configure
 
-If you have a running Nexus instance:
+Copy the environment template and fill in your values:
 
 ```bash
-# Set the Nexus API URL and shared secret
-paperclip plugin config permaship.nexus-governance set nexusUrl http://localhost:9000
-paperclip plugin config permaship.nexus-governance set internalSecret your-shared-secret
+cp .env.example .env
 ```
 
-Without configuration, the plugin runs in Standalone mode automatically.
+### Environment Variables
 
-### Verify
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `PORT` | No | Server port (default: 3100) |
+| `NODE_ENV` | No | Environment (default: development) |
+| `PAPERCLIP_BASE_URL` | Yes | Paperclip instance URL |
+| `PAPERCLIP_API_KEY` | Yes | Paperclip API key for callbacks |
+| `PERMASHIP_BASE_URL` | Yes | PermaShip API base URL |
+| `PERMASHIP_API_KEY` | Yes | PermaShip API key |
+| `PERMASHIP_ORG_ID` | Yes | PermaShip organization ID |
+| `PERMASHIP_PROJECT_ID` | Yes | PermaShip project ID |
+| `PERMASHIP_REPO_KEY` | Yes | Target repository (e.g. `acme/backend`) |
+| `PERMASHIP_WEBHOOK_SECRET` | No | Webhook signature verification secret |
+| `DEFAULT_TICKET_KIND` | No | Ticket kind (default: `feature`) |
+| `DEFAULT_TICKET_PRIORITY` | No | Ticket priority (default: `2`) |
+
+### Run Locally
 
 ```bash
-paperclip plugin health permaship.nexus-governance
+# Development with hot reload
+npm run dev
+
+# Production
+npm run build
+npm start
 ```
 
-## Agent Tool
+### Run Tests
 
-The plugin also registers a `nexus-review` tool that any Paperclip agent can call directly:
-
-```
-"I want a governance review on issue #42 before I start implementation."
+```bash
+npm test
 ```
 
-This lets agents self-govern by requesting review before making changes, not just after.
+## API Endpoints
 
-## Configuration Options
+### `POST /invoke`
 
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `nexusUrl` | string | none | Nexus API base URL (enables Connected mode) |
-| `internalSecret` | string | none | Shared secret for Nexus API auth |
-| `activeSpecialists` | string[] | all | Which specialists to include in reviews |
-| `autoApproveOnConsensus` | boolean | false | Auto-approve when all specialists agree |
-| `reviewTimeoutMs` | number | 120000 | Max time to wait for a review (ms) |
+Receives Paperclip HTTP adapter invocations. Returns `202 Accepted` immediately and processes the ticket creation asynchronously.
 
-## Review Output
+**Request body:**
 
-Reviews are posted as issue comments with this structure:
-
-```
-## Nexus Governance Review [APPROVED]
-
-Overall assessment of the proposed work and key considerations.
-
-### Specialist Verdicts
-- PASS [ciso] (info): No security concerns identified.
-- FLAG [qa-manager] (warning): Acceptance criteria could be more specific.
-- PASS [sre] (info): Low risk to reliability.
-- PASS [product-manager] (info): Aligns with current sprint goals.
-
-Reviewed in 12s by Nexus (permaship.ai)
+```json
+{
+  "runId": "run_abc123",
+  "agentId": "agent_eng_01",
+  "taskId": "task_456",
+  "wakeReason": "new_issue",
+  "issueIds": ["ISS-101"],
+  "context": {
+    "title": "Add rate limiting to /api/users endpoint"
+  }
+}
 ```
 
-## Why Governance Matters
+**Response:**
 
-AI agents are productive. They are also confident, fast, and unchecked by default. A coding agent will happily:
+```json
+{
+  "status": "accepted",
+  "runId": "run_abc123"
+}
+```
 
-- Introduce a SQL injection to ship a feature faster
-- Delete a "redundant" error handler that prevents cascading failures
-- Refactor a module in a way that breaks three downstream services
-- Ship code that works locally but fails under production load
+### `POST /webhooks/permaship`
 
-Governance is not bureaucracy. It is the difference between "move fast and break things" and "move fast and catch the things that would break."
+Receives PermaShip webhook events. Verifies signature (if secret is configured), looks up the mapping, and sends a callback to Paperclip.
 
-## Built With
+**Request body:**
 
-- [Paperclip Plugin SDK](https://github.com/paperclipai/paperclip) for the plugin framework
-- [Nexus](https://github.com/PermaShipAI/nexus) for the full governance engine
-- [Permaship.ai](https://permaship.ai) for the hosted autonomous engineering platform
+```json
+{
+  "event": "ready_for_review",
+  "ticketId": "tkt_789",
+  "projectId": "proj_example",
+  "data": {
+    "prUrl": "https://github.com/acme/backend/pull/42"
+  }
+}
+```
 
-## License
+### `GET /health`
 
-MIT
+Returns service health status.
+
+## Paperclip HTTP Adapter Configuration
+
+To configure Paperclip to use this bridge, add an HTTP adapter config like:
+
+```json
+{
+  "id": "permaship-bridge",
+  "name": "PermaShip Bridge",
+  "type": "http",
+  "config": {
+    "url": "http://localhost:3100/invoke",
+    "method": "POST",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "timeout": 10000,
+    "async": true
+  }
+}
+```
+
+See `examples/sample-paperclip-agent-config.json` for a complete example.
+
+The adapter uses the async `202 Accepted` + callback model. Do not increase the timeout to wait for completion.
+
+## Event Mapping
+
+| PermaShip Event | Paperclip Callback Status | Notes |
+|-----------------|--------------------------|-------|
+| `ready_for_review` | `succeeded` | Work is complete and ready for human review |
+| `ticket.failed` | `failed` | Execution failed; error detail included if available |
+| Any other event | No callback | Logged and stored, but no callback sent |
+
+## Data Storage
+
+The bridge uses a local JSON file (`bridge-data.json`) to persist run-to-ticket mappings. Each mapping tracks:
+
+- Paperclip run/task/agent IDs
+- PermaShip ticket/project IDs
+- Current status and latest event
+- Whether a callback has been sent (prevents duplicates)
+
+## Known Limitations
+
+- **Single-instance only.** JSON file storage is local. For multi-instance deployments, swap to Postgres or SQLite.
+- **No retry queue.** If a callback to Paperclip fails, it is logged but not retried.
+- **Webhook signature verification assumes HMAC-SHA256.** The exact PermaShip signature format should be confirmed against their docs.
+- **No authentication on /invoke.** In production, add authentication middleware or deploy behind an API gateway.
+- **No idempotency key handling.** Duplicate webhook deliveries are partially handled (callback-sent flag), but could be more robust.
+
+## Future Direction
+
+These are documented for future development but not built in v1:
+
+- Native Paperclip plugin-runtime version (pending Paperclip plugin spec stabilization)
+- Richer ticket classification from Paperclip context
+- Idempotent retry queue for failed callbacks
+- Persistence upgrade to Postgres for multi-instance deployment
+- Metrics and distributed tracing
+- Nexus-native bridge path
+- PR/deployment artifact links back into Paperclip
+- Cost accounting passthrough (usage/costUsd fields)

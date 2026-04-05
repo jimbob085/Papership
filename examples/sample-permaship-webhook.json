@@ -1,0 +1,20 @@
+{
+  "ready_for_review": {
+    "event": "ready_for_review",
+    "ticketId": "tkt_789",
+    "projectId": "proj_example",
+    "data": {
+      "prUrl": "https://github.com/acme/backend/pull/42",
+      "branch": "permaship/tkt-789"
+    }
+  },
+  "ticket_failed": {
+    "event": "ticket.failed",
+    "ticketId": "tkt_789",
+    "projectId": "proj_example",
+    "data": {
+      "errorMessage": "Build failed: TypeScript compilation error in src/index.ts",
+      "failedAt": "2024-01-15T10:30:00Z"
+    }
+  }
+}

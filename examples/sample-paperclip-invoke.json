@@ -1,0 +1,15 @@
+{
+  "runId": "run_abc123",
+  "agentId": "agent_eng_01",
+  "taskId": "task_456",
+  "wakeReason": "new_issue",
+  "issueIds": ["ISS-101", "ISS-102"],
+  "approvalStatus": "approved",
+  "context": {
+    "title": "Add rate limiting to /api/users endpoint",
+    "summary": "Implement token bucket rate limiting on the users API to prevent abuse",
+    "repositoryUrl": "https://github.com/acme/backend",
+    "branch": "main",
+    "priority": "high"
+  }
+}

@@ -1,40 +1,27 @@
 {
-  "name": "@permaship/nexus-governance-plugin",
+  "name": "paperclip-permaship-bridge",
   "version": "0.1.0",
-  "description": "AI governance layer for Paperclip. Routes agent work through Nexus specialist review (Security, QA, SRE, Product, Design) before execution.",
-  "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "description": "External bridge service connecting Paperclip HTTP adapter invocations to PermaShip governed engineering execution",
+  "main": "dist/server.js",
   "scripts": {
+    "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "dev": "tsc --watch",
-    "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "start": "node dist/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
-  "keywords": [
-    "paperclip",
-    "paperclip-plugin",
-    "nexus",
-    "permaship",
-    "ai-governance",
-    "multi-agent",
-    "code-review",
-    "agent-orchestration"
-  ],
-  "author": "PermaShip AI <hello@permaship.ai>",
+  "keywords": ["paperclip", "permaship", "bridge", "integration"],
   "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/PermaShipAI/nexus-paperclip-plugin"
-  },
-  "homepage": "https://permaship.ai",
   "dependencies": {
-    "@paperclipai/plugin-sdk": "latest"
+    "dotenv": "^16.4.0",
+    "express": "^4.21.0",
+    "zod": "^3.24.0"
   },
   "devDependencies": {
-    "typescript": "^5.7.0"
-  },
-  "engines": {
-    "node": ">=20.0.0"
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
   }
 }

@@ -1,0 +1,12 @@
+{
+  "success": {
+    "status": "succeeded",
+    "result": "PermaShip completed the engineering task and marked it ready for review.",
+    "errorMessage": null
+  },
+  "failure": {
+    "status": "failed",
+    "result": "PermaShip failed while executing the engineering task.",
+    "errorMessage": "Build failed: TypeScript compilation error in src/index.ts"
+  }
+}
