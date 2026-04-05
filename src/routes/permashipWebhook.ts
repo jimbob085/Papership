@@ -4,6 +4,19 @@ import { verifyWebhookSignature } from "../lib/signature";
 import { WebhookService } from "../services/webhookService";
 import { logger } from "../lib/logger";
 
+/**
+ * The raw body is attached to req by the rawBodyMiddleware in app.ts.
+ * This is necessary for webhook signature verification, which must
+ * verify against the exact bytes received, not a re-serialized object.
+ */
+declare global {
+  namespace Express {
+    interface Request {
+      rawBody?: string;
+    }
+  }
+}
+
 export function createWebhookRouter(
   webhookService: WebhookService,
   webhookSecret: string
@@ -11,9 +24,9 @@ export function createWebhookRouter(
   const router = Router();
 
   router.post("/", (req: Request, res: Response) => {
-    // Verify signature
+    // Verify signature against raw body (attached by middleware in app.ts)
     const signature = req.headers["x-webhook-signature"] as string | undefined;
-    const rawBody = JSON.stringify(req.body);
+    const rawBody = req.rawBody || "";
 
     if (webhookSecret && !verifyWebhookSignature(rawBody, signature || "", webhookSecret)) {
       logger.warn("Webhook signature verification failed");

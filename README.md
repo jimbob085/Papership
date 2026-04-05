@@ -43,7 +43,7 @@ Paperclip                    Bridge                      PermaShip
 1. Paperclip sends an HTTP adapter request to `POST /invoke` with a `runId` and task context.
 2. The bridge returns `202 Accepted` immediately.
 3. The bridge maps the Paperclip payload to a PermaShip ticket and creates it via the PermaShip API.
-4. The bridge stores a `paperclipRunId <-> permashipTicketId` mapping in a local SQLite database.
+4. The bridge stores a `paperclipRunId <-> permashipTicketId` mapping in a local JSON file.
 5. PermaShip executes the engineering work.
 6. PermaShip sends a webhook (`ready_for_review` or `ticket.failed`) to `POST /webhooks/permaship`.
 7. The bridge looks up the mapping and calls Paperclip's callback endpoint with `succeeded` or `failed`.
@@ -162,15 +162,14 @@ To configure Paperclip to use this bridge, add an HTTP adapter config like:
 {
   "id": "permaship-bridge",
   "name": "PermaShip Bridge",
-  "type": "http",
-  "config": {
+  "adapterType": "http",
+  "adapterConfig": {
     "url": "http://localhost:3100/invoke",
     "method": "POST",
     "headers": {
       "Content-Type": "application/json"
     },
-    "timeout": 10000,
-    "async": true
+    "timeoutMs": 10000
   }
 }
 ```

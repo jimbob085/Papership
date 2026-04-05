@@ -30,7 +30,7 @@ export class PermaShipClient {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`,
+        Authorization: `ApiKey ${this.apiKey}`,
       },
       body: JSON.stringify(ticket),
     });

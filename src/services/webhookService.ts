@@ -54,7 +54,7 @@ export class WebhookService {
     // Find the mapping
     const mapping = this.store.getByTicketId(ticketId);
     if (!mapping) {
-      logger.warn("No mapping found for ticket, storing event only", {
+      logger.warn("No mapping found for ticket, ignoring event", {
         permashipTicketId: ticketId,
         event,
       });

@@ -1,4 +1,4 @@
-import express from "express";
+import express, { type Request } from "express";
 import type { AppConfig } from "./config";
 import { MappingStore } from "./store/mappingStore";
 import { PermaShipClient } from "./clients/permashipClient";
@@ -13,16 +13,23 @@ import { createHealthRouter } from "./routes/health";
 export function createApp(config: AppConfig, store?: MappingStore) {
   const app = express();
 
-  // Body size limit for security
-  app.use(express.json({ limit: "1mb" }));
+  // Parse JSON and capture raw body for webhook signature verification
+  app.use(
+    express.json({
+      limit: "1mb",
+      verify: (req: Request, _res, buf) => {
+        req.rawBody = buf.toString("utf-8");
+      },
+    })
+  );
 
   // Initialize dependencies
   const mappingStore = store || new MappingStore();
   const permashipClient = new PermaShipClient(config);
   const paperclipClient = new PaperclipClient(config);
 
-  const invokeService = new InvokeService(config, mappingStore, permashipClient);
   const callbackService = new CallbackService(mappingStore, paperclipClient);
+  const invokeService = new InvokeService(config, mappingStore, permashipClient, callbackService);
   const webhookService = new WebhookService(mappingStore, callbackService);
 
   // Mount routes

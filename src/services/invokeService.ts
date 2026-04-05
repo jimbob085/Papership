@@ -2,6 +2,7 @@ import type { PaperclipInvokePayload } from "../types/paperclip";
 import type { AppConfig } from "../config";
 import { mapToPermaShipTicket } from "../lib/mapper";
 import { PermaShipClient } from "../clients/permashipClient";
+import { CallbackService } from "./callbackService";
 import { MappingStore } from "../store/mappingStore";
 import { logger } from "../lib/logger";
 
@@ -9,7 +10,8 @@ export class InvokeService {
   constructor(
     private config: AppConfig,
     private store: MappingStore,
-    private permashipClient: PermaShipClient
+    private permashipClient: PermaShipClient,
+    private callbackService: CallbackService
   ) {}
 
   /**
@@ -54,6 +56,13 @@ export class InvokeService {
         error: message,
       });
       this.store.updateStatus(runId, "create_failed", message);
+
+      // Callback Paperclip with failure so the run doesn't hang
+      await this.callbackService.sendCallback(runId, {
+        status: "failed",
+        result: "Bridge failed to create PermaShip ticket.",
+        errorMessage: message,
+      });
     }
   }
 }
