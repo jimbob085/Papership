@@ -1,80 +1,66 @@
-# paperclip-permaship-bridge
+# PaperShip
 
-An external bridge service that connects **Paperclip** HTTP adapter invocations to **PermaShip** governed engineering execution.
+The integration layer between [Paperclip](https://github.com/nicepkg/paperclip) and [PermaShip](https://permaship.ai). Connects Paperclip's agent orchestration to PermaShip's governed engineering execution, and provides Nexus adapter profiles so Nexus can talk to Paperclip natively.
 
-This is not a native Paperclip plugin. It is a standalone integration built around Paperclip's async HTTP adapter pattern, translating orchestration decisions into concrete engineering tickets and reporting results back when work completes.
+## What This Does
 
-## Why This Exists
+PaperShip has two halves:
 
-Paperclip handles company-level orchestration: deciding what engineering work should happen. PermaShip handles governed engineering execution: turning work into concrete tasks, executing through a coding backend, and reviewing before shipping.
+**1. The Bridge** (`src/`) receives work from Paperclip agents, translates it into PermaShip tickets, and reports results back when execution completes. It also runs background services that keep the two systems in sync.
 
-This bridge connects those layers:
-
-1. **Paperclip** decides engineering work should happen
-2. **The bridge** translates that into a PermaShip ticket
-3. **PermaShip** performs governed execution
-4. **The bridge** reports completion status back to Paperclip
+**2. The Adapters** (`src/adapters/`) let Nexus use Paperclip as its ticket tracker, project registry, and tenant resolver directly. Set `ADAPTER_PROFILE=permaship` in Nexus and it talks to Paperclip natively through these adapters.
 
 ## Architecture
 
 ```
-Paperclip                    Bridge                      PermaShip
-   |                           |                            |
-   |  POST /invoke             |                            |
-   |-------------------------->|                            |
-   |  202 Accepted             |                            |
-   |<--------------------------|                            |
-   |                           |  POST /orgs/.../tickets    |
-   |                           |--------------------------->|
-   |                           |  201 Created (ticketId)    |
-   |                           |<---------------------------|
-   |                           |                            |
-   |                           |     ... work happens ...   |
-   |                           |                            |
-   |                           |  POST /webhooks/permaship  |
-   |                           |<---------------------------|
-   |  POST /api/heartbeat-     |                            |
-   |    runs/:runId/callback   |                            |
-   |<--------------------------|                            |
+Paperclip                    PaperShip Bridge                PermaShip / Nexus
+   |                              |                               |
+   |  POST /invoke                |                               |
+   |----------------------------->|                               |
+   |  202 Accepted                |                               |
+   |<-----------------------------|                               |
+   |                              |  Create ticket / dispatch     |
+   |                              |------------------------------>|
+   |                              |                               |
+   |                              |      ... work happens ...     |
+   |                              |                               |
+   |                              |  Webhook: ready_for_review    |
+   |                              |<------------------------------|
+   |                              |                               |
+   |                              |  Review Loop: classify +      |
+   |                              |  route to Nexus specialist    |
+   |                              |------------------------------>|
+   |                              |                               |
+   |  Callback: succeeded/failed  |                               |
+   |<-----------------------------|                               |
 ```
 
-## End-to-End Sequence
+## Features
 
-1. Paperclip sends an HTTP adapter request to `POST /invoke` with a `runId` and task context.
-2. The bridge returns `202 Accepted` immediately.
-3. The bridge maps the Paperclip payload to a PermaShip ticket and creates it via the PermaShip API.
-4. The bridge stores a `paperclipRunId <-> permashipTicketId` mapping in a local JSON file.
-5. PermaShip executes the engineering work.
-6. PermaShip sends a webhook (`ready_for_review` or `ticket.failed`) to `POST /webhooks/permaship`.
-7. The bridge looks up the mapping and calls Paperclip's callback endpoint with `succeeded` or `failed`.
+- **Invoke endpoint** that receives Paperclip HTTP adapter calls and creates PermaShip tickets
+- **Webhook handler** with HMAC-SHA256 signature verification for PermaShip events
+- **Bearer token auth** on the /invoke route
+- **Bidirectional status sync** between Paperclip issues and PermaShip tickets
+- **Review loop** that polls completed heartbeat runs, classifies them by domain (security, reliability, quality, cost, UX), and routes to the appropriate Nexus specialist agent
+- **Retry scheduler** with exponential backoff for failed callbacks
+- **Stall detector** that finds stuck heartbeat runs (>30 min) and resets them
+- **Nexus adapter profile** (`src/adapters/`) for native Paperclip integration
+- **Secret redaction** utility for scrubbing API keys from logs
 
 ## Setup
 
-### Prerequisites
-
-- Node.js 18+
-- npm
-
-### Install
-
 ```bash
 npm install
-```
-
-### Configure
-
-Copy the environment template and fill in your values:
-
-```bash
 cp .env.example .env
+# Fill in your values
+npm run dev
 ```
 
-### Environment Variables
+## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `PORT` | No | Server port (default: 3100) |
-| `NODE_ENV` | No | Environment (default: development) |
 | `PAPERCLIP_BASE_URL` | Yes | Paperclip instance URL |
 | `PAPERCLIP_API_KEY` | Yes | Paperclip API key for callbacks |
 | `PERMASHIP_BASE_URL` | Yes | PermaShip API base URL |
@@ -83,135 +69,83 @@ cp .env.example .env
 | `PERMASHIP_PROJECT_ID` | Yes | PermaShip project ID |
 | `PERMASHIP_REPO_KEY` | Yes | Target repository (e.g. `acme/backend`) |
 | `PERMASHIP_WEBHOOK_SECRET` | No | Webhook signature verification secret |
-| `DEFAULT_TICKET_KIND` | No | Ticket kind (default: `feature`) |
-| `DEFAULT_TICKET_PRIORITY` | No | Ticket priority (default: `2`) |
 
-### Run Locally
+## Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `npm run dev` | Start with hot reload |
+| `npm run build` | Compile TypeScript |
+| `npm start` | Run compiled output |
+| `npm test` | Run test suite (78 tests) |
+
+## Project Structure
+
+```
+src/
+  adapters/           Nexus adapter profile (ADAPTER_PROFILE=permaship)
+    index.ts            Entry point: loadPermashipAdapters()
+    llm-provider.ts     Anthropic LLM provider
+    project-registry.ts Paperclip project registry adapter
+    ticket-tracker.ts   Paperclip ticket tracker adapter
+    tenant-resolver.ts  Tenant resolver adapter
+    redact-secrets.ts   API key / token redaction utility
+    stubs.ts            No-op adapters for unused interfaces
+    types.ts            AdapterSet type definitions
+  clients/            API clients for Paperclip and PermaShip
+  review-loop/        Post-execution governance review pipeline
+    index.ts            Main loop: poll, classify, route
+    classifier.ts       Domain classifier (security/reliability/quality/cost/UX)
+    router.ts           Maps domains to Nexus specialist agents
+    nexus-client.ts     Posts review requests to Nexus chat API
+    watermark.ts        Tracks last-processed timestamp
+  routes/             Express route handlers
+  services/           Core business logic
+    invokeService.ts    Translates Paperclip invocations to PermaShip tickets
+    callbackService.ts  Sends completion callbacks to Paperclip
+    webhookService.ts   Processes PermaShip webhook events + bidirectional sync
+    retryScheduler.ts   Exponential backoff retry for failed callbacks
+    stallDetector.ts    Detects and resets stuck heartbeat runs
+  store/              Local JSON persistence for run-to-ticket mappings
+tests/                78 tests across 8 files
+```
+
+## Using the Nexus Adapters
+
+To run Nexus with Paperclip as the backend:
 
 ```bash
-# Development with hot reload
-npm run dev
-
-# Production
-npm run build
-npm start
+# In your Nexus .env
+ADAPTER_PROFILE=permaship
+PERMASHIP_API_URL=http://127.0.0.1:3100
+PERMASHIP_API_KEY=your-agent-jwt
+PERMASHIP_ORG_ID=your-paperclip-company-id
+LLM_API_KEY=your-anthropic-key
 ```
 
-### Run Tests
-
-```bash
-npm test
-```
-
-## API Endpoints
-
-### `POST /invoke`
-
-Receives Paperclip HTTP adapter invocations. Returns `202 Accepted` immediately and processes the ticket creation asynchronously.
-
-**Request body:**
-
-```json
-{
-  "runId": "run_abc123",
-  "agentId": "agent_eng_01",
-  "taskId": "task_456",
-  "wakeReason": "new_issue",
-  "issueIds": ["ISS-101"],
-  "context": {
-    "title": "Add rate limiting to /api/users endpoint"
-  }
-}
-```
-
-**Response:**
-
-```json
-{
-  "status": "accepted",
-  "runId": "run_abc123"
-}
-```
-
-### `POST /webhooks/permaship`
-
-Receives PermaShip webhook events. Verifies signature (if secret is configured), looks up the mapping, and sends a callback to Paperclip.
-
-**Request body:**
-
-```json
-{
-  "event": "ready_for_review",
-  "ticketId": "tkt_789",
-  "projectId": "proj_example",
-  "data": {
-    "prUrl": "https://github.com/acme/backend/pull/42"
-  }
-}
-```
-
-### `GET /health`
-
-Returns service health status.
+This replaces Nexus's default adapters with Paperclip-backed implementations for ticket tracking, project registry, and tenant resolution.
 
 ## Paperclip HTTP Adapter Configuration
 
-To configure Paperclip to use this bridge, add an HTTP adapter config like:
+Configure a Paperclip agent to use the bridge:
 
 ```json
 {
-  "id": "permaship-bridge",
-  "name": "PermaShip Bridge",
   "adapterType": "http",
   "adapterConfig": {
     "url": "http://localhost:3100/invoke",
     "method": "POST",
     "headers": {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      "Authorization": "Bearer your-api-key"
     },
     "timeoutMs": 10000
   }
 }
 ```
 
-See `examples/sample-paperclip-agent-config.json` for a complete example.
-
 The adapter uses the async `202 Accepted` + callback model. Do not increase the timeout to wait for completion.
 
-## Event Mapping
+## License
 
-| PermaShip Event | Paperclip Callback Status | Notes |
-|-----------------|--------------------------|-------|
-| `ready_for_review` | `succeeded` | Work is complete and ready for human review |
-| `ticket.failed` | `failed` | Execution failed; error detail included if available |
-| Any other event | No callback | Logged and stored, but no callback sent |
-
-## Data Storage
-
-The bridge uses a local JSON file (`bridge-data.json`) to persist run-to-ticket mappings. Each mapping tracks:
-
-- Paperclip run/task/agent IDs
-- PermaShip ticket/project IDs
-- Current status and latest event
-- Whether a callback has been sent (prevents duplicates)
-
-## Known Limitations
-
-- **Single-instance only.** JSON file storage is local. For multi-instance deployments, swap to Postgres or SQLite.
-- **No retry queue.** If a callback to Paperclip fails, it is logged but not retried.
-- **Webhook signature verification assumes HMAC-SHA256.** The exact PermaShip signature format should be confirmed against their docs.
-- **No authentication on /invoke.** In production, add authentication middleware or deploy behind an API gateway.
-- **No idempotency key handling.** Duplicate webhook deliveries are partially handled (callback-sent flag), but could be more robust.
-
-## Future Direction
-
-These are documented for future development but not built in v1:
-
-- Native Paperclip plugin-runtime version (pending Paperclip plugin spec stabilization)
-- Richer ticket classification from Paperclip context
-- Idempotent retry queue for failed callbacks
-- Persistence upgrade to Postgres for multi-instance deployment
-- Metrics and distributed tracing
-- Nexus-native bridge path
-- PR/deployment artifact links back into Paperclip
-- Cost accounting passthrough (usage/costUsd fields)
+MIT
