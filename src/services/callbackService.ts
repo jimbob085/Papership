@@ -36,10 +36,22 @@ export class CallbackService {
       this.store.markCallbackSent(runId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logger.error("Callback send failed", {
-        paperclipRunId: runId,
-        error: message,
-      });
+      this.store.markRetryNeeded(runId);
+      const updated = this.store.getByRunId(runId);
+      if (updated?.retryExhausted) {
+        logger.error("Callback retry exhausted", {
+          paperclipRunId: runId,
+          retryCount: updated.retryCount,
+          error: message,
+        });
+      } else {
+        logger.warn("Callback send failed, queued for retry", {
+          paperclipRunId: runId,
+          retryCount: updated?.retryCount ?? 0,
+          nextRetryAt: updated?.nextRetryAt ?? null,
+          error: message,
+        });
+      }
     }
   }
 }

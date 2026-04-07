@@ -10,9 +10,15 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
-  "keywords": ["paperclip", "permaship", "bridge", "integration"],
+  "keywords": [
+    "paperclip",
+    "permaship",
+    "bridge",
+    "integration"
+  ],
   "license": "MIT",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.85.0",
     "dotenv": "^16.4.0",
     "express": "^4.21.0",
     "zod": "^3.24.0"
@@ -20,6 +26,8 @@
   "devDependencies": {
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.0",
+    "@types/supertest": "^7.2.0",
+    "supertest": "^7.2.2",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "vitest": "^2.1.0"

@@ -27,6 +27,7 @@ export class InvokeService {
         paperclipRunId: runId,
         paperclipTaskId: payload.taskId,
         paperclipAgentId: payload.agentId,
+        paperclipIssueId: payload.issueIds?.[0],
         permashipProjectId: this.config.permaship.projectId,
       });
 

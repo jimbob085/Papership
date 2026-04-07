@@ -9,6 +9,9 @@ import { WebhookService } from "./services/webhookService";
 import { createInvokeRouter } from "./routes/invoke";
 import { createWebhookRouter } from "./routes/permashipWebhook";
 import { createHealthRouter } from "./routes/health";
+import { RetryScheduler } from "./services/retryScheduler";
+import { StallDetector } from "./services/stallDetector";
+import { startReviewLoop } from "./review-loop/index";
 
 export function createApp(config: AppConfig, store?: MappingStore) {
   const app = express();
@@ -30,12 +33,23 @@ export function createApp(config: AppConfig, store?: MappingStore) {
 
   const callbackService = new CallbackService(mappingStore, paperclipClient);
   const invokeService = new InvokeService(config, mappingStore, permashipClient, callbackService);
-  const webhookService = new WebhookService(mappingStore, callbackService);
+  const webhookService = new WebhookService(mappingStore, callbackService, paperclipClient);
 
   // Mount routes
-  app.use("/invoke", createInvokeRouter(invokeService));
+  app.use("/invoke", createInvokeRouter(invokeService, config.paperclip.apiKey));
   app.use("/webhooks/permaship", createWebhookRouter(webhookService, config.permaship.webhookSecret));
   app.use("/health", createHealthRouter());
 
-  return { app, mappingStore };
+  // Start retry scheduler for failed callbacks
+  const retryScheduler = new RetryScheduler(mappingStore, callbackService);
+  retryScheduler.start();
+
+  // Start stall detector for stuck heartbeat runs
+  const stallDetector = new StallDetector(mappingStore, paperclipClient);
+  stallDetector.start();
+
+  // Start review loop for post-execution governance reviews
+  const reviewLoop = startReviewLoop(config, mappingStore);
+
+  return { app, mappingStore, retryScheduler, stallDetector, reviewLoop };
 }

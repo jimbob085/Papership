@@ -25,10 +25,17 @@ export function createWebhookRouter(
 
   router.post("/", (req: Request, res: Response) => {
     // Verify signature against raw body (attached by middleware in app.ts)
-    const signature = req.headers["x-webhook-signature"] as string | undefined;
+    // Accept either X-Permaship-Signature or X-Webhook-Signature
+    const signature =
+      (req.headers["x-permaship-signature"] as string | undefined) ||
+      (req.headers["x-webhook-signature"] as string | undefined);
     const rawBody = req.rawBody || "";
 
-    if (webhookSecret && !verifyWebhookSignature(rawBody, signature || "", webhookSecret)) {
+    if (!webhookSecret) {
+      logger.warn(
+        "PERMASHIP_WEBHOOK_SECRET is not configured; skipping signature verification"
+      );
+    } else if (!verifyWebhookSignature(rawBody, signature || "", webhookSecret)) {
       logger.warn("Webhook signature verification failed");
       res.status(401).json({ error: "Invalid signature" });
       return;

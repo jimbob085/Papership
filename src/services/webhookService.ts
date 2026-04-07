@@ -2,6 +2,7 @@ import type { PermaShipWebhookPayload } from "../types/permaship";
 import type { PaperclipCallbackPayload } from "../types/paperclip";
 import { MappingStore } from "../store/mappingStore";
 import { CallbackService } from "./callbackService";
+import { PaperclipClient } from "../clients/paperclipClient";
 import { logger } from "../lib/logger";
 
 /**
@@ -37,10 +38,17 @@ export function translateEvent(
   }
 }
 
+/** Map PermaShip events to Paperclip issue statuses */
+const EVENT_TO_ISSUE_STATUS: Record<string, string> = {
+  ready_for_review: "done",
+  "ticket.failed": "todo",
+};
+
 export class WebhookService {
   constructor(
     private store: MappingStore,
-    private callbackService: CallbackService
+    private callbackService: CallbackService,
+    private paperclipClient?: PaperclipClient
   ) {}
 
   async handleEvent(payload: PermaShipWebhookPayload): Promise<void> {
@@ -78,6 +86,20 @@ export class WebhookService {
         permashipTicketId: ticketId,
         event,
       });
+    }
+
+    // Bidirectional sync: update Paperclip issue status if we have an issueId
+    const issueStatus = EVENT_TO_ISSUE_STATUS[event];
+    if (issueStatus && mapping.paperclipIssueId && this.paperclipClient) {
+      try {
+        await this.paperclipClient.updateIssueStatus(mapping.paperclipIssueId, issueStatus);
+      } catch (err) {
+        logger.error("Failed to sync issue status to Paperclip (non-blocking)", {
+          paperclipIssueId: mapping.paperclipIssueId,
+          targetStatus: issueStatus,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
   }
 }
